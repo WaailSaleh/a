@@ -2,7 +2,7 @@ name: Deploy Direct to Hetzner
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   deploy-direct:
@@ -19,12 +19,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 3. Build the image (but don't push to registry, just load to runner)
+      # 3. Build the image (Load to runner, don't push to registry)
       - name: Build Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          load: true # Keeps image local on the runner
+          load: true
           platforms: linux/arm64
           tags: openclaw:latest
 
@@ -38,25 +38,21 @@ jobs:
           source: "docker-compose.yml"
           target: "/root/openclaw/"
 
-      # 5. Save Image, Compress, Pipe to Server, Load, and Restart
+      # 5. Pipe Image to Server & Restart (FIXED)
       - name: Pipe Image to Server & Restart
-        run: |
-          # Save image -> Gzip -> SSH -> Gunzip -> Docker Load
-          docker save openclaw:latest | gzip | ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'gunzip | docker load'
-          
-          # Restart App
-          ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'cd ~/openclaw && docker compose up -d --remove-orphans'
         env:
-          # We need to write the key to a file for the SSH command to use it in the pipe
           SSH_KEY: ${{ secrets.SSH_KEY }}
-        shell: bash
-        # This little block writes the key secret to a file named key.pem so SSH can use it
         run: |
+          # Create a temporary private key file for the SSH command
           echo "$SSH_KEY" > key.pem
           chmod 600 key.pem
-          
-          echo "🚀 Sending image to server..."
+
+          echo "🚀 Sending image to server (this may take a moment)..."
+          # Compresses the image on the fly and streams it to the server
           docker save openclaw:latest | gzip | ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'gunzip | docker load'
-          
+
           echo "🔄 Restarting container..."
-          ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'cd ~/openclaw && docker compose up -d'
+          ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'cd ~/openclaw && docker compose up -d --remove-orphans'
+
+          # Cleanup
+          rm key.pem
