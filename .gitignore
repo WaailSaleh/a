@@ -1,0 +1,9 @@
+# Secrets
+.env
+
+# Local Data (OpenClaw's database and logs)
+data/
+node_modules/
+
+# OS files
+.DS_Store

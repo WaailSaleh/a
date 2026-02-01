@@ -1,0 +1,13 @@
+services:
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-app
+    restart: unless-stopped
+    ports:
+      - "18789:18789"
+    environment:
+      - SETUP_PASSWORD=${SETUP_PASSWORD}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./data:/home/node/.openclaw
+      - ./config.yaml:/home/node/.openclaw/config.yaml
