@@ -1,13 +1,13 @@
 services:
   openclaw:
-    image: ghcr.io/openclaw/openclaw:latest
-    container_name: openclaw-app
-    restart: unless-stopped
+    # Points to the image we will build in GitHub Actions
+    image: ghcr.io/YOUR_GITHUB_USERNAME/openclaw:latest
+    container_name: openclaw
+    restart: always
     ports:
-      - "18789:18789"
+      - "3000:3000" # Adjust port based on what OpenClaw actually uses
     environment:
-      - SETUP_PASSWORD=${SETUP_PASSWORD}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NODE_ENV=production
+      # Add other API keys or environment variables here
     volumes:
-      - ./data:/home/node/.openclaw
-      - ./config.yaml:/home/node/.openclaw/config.yaml
+      - ./data:/app/data # Persistence for database/config if needed
