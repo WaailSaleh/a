@@ -1,7 +1,7 @@
 services:
   openclaw:
     # Points to the image we will build in GitHub Actions
-    image: ghcr.io/YOUR_GITHUB_USERNAME/openclaw:latest
+    image: openclaw:latest
     container_name: openclaw
     restart: always
     ports:
