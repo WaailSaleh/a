@@ -46,39 +46,38 @@ jobs:
           # STRICTLY build for arm64 to match your Hetzner CPU
           platforms: linux/arm64
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+deploy:
+  needs: build-and-push
+  runs-on: ubuntu-latest
+  steps:
+    # 1. Checkout is NOW REQUIRED so the runner has access to docker-compose.yml
+    - name: Checkout code
+      uses: actions/checkout@v4
 
- deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      # 1. Checkout is NOW REQUIRED so the runner has access to docker-compose.yml
-      - name: Checkout code
-        uses: actions/checkout@v4
+    # 2. Copy docker-compose.yml to the server
+    - name: Copy Compose file via SCP
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        source: "docker-compose.yml"
+        target: "/root/openclaw/" # Explicit absolute path is safer
 
-      # 2. Copy docker-compose.yml to the server
-      - name: Copy Compose file via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.yml"
-          target: "/root/openclaw/" # Explicit absolute path is safer
+    # 3. SSH in to pull and restart
+    - name: Deploy via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        script: |
+          cd ~/openclaw
 
-      # 3. SSH in to pull and restart
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd ~/openclaw
-            
-            # Login if image is private (optional, if you configured a token previously)
-            # echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          # Login if image is private (optional, if you configured a token previously)
+          # echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Pull and Restart
-            docker compose pull
-            docker compose up -d --remove-orphans
-            docker image prune -f
+          # Pull and Restart
+          docker compose pull
+          docker compose up -d --remove-orphans
+          docker image prune -f
