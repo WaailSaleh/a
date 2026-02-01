@@ -1,83 +1,62 @@
-name: Deploy to Hetzner ARM
+name: Deploy Direct to Hetzner
 
 on:
   push:
-    branches: ["main"]
-  workflow_dispatch:
-
-env:
-  REGISTRY: ghcr.io
-  # Replace with your repo name if different
-  IMAGE_NAME: ${{ github.repository }}
+    branches: [ "main" ]
 
 jobs:
-  build-and-push:
+  deploy-direct:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. Set up QEMU to allow building for ARM on x86 runners
+      # 1. Setup QEMU for ARM builds
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 2. Set up Docker Buildx
+      # 2. Setup Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 3. Login to GitHub Container Registry
-      - name: Log in to the Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # 4. Build and Push (Targeting ARM64)
-      - name: Build and push Docker image
+      # 3. Build the image (but don't push to registry, just load to runner)
+      - name: Build Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
-          # STRICTLY build for arm64 to match your Hetzner CPU
+          load: true # Keeps image local on the runner
           platforms: linux/arm64
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-  deploy:
-  needs: build-and-push
-  runs-on: ubuntu-latest
-  steps:
-    # 1. Checkout is NOW REQUIRED so the runner has access to docker-compose.yml
-    - name: Checkout code
-      uses: actions/checkout@v4
+          tags: openclaw:latest
 
-    # 2. Copy docker-compose.yml to the server
-    - name: Copy Compose file via SCP
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.SSH_KEY }}
-        source: "docker-compose.yml"
-        target: "/root/openclaw/" # Explicit absolute path is safer
+      # 4. Copy Compose file to server
+      - name: Copy Compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "docker-compose.yml"
+          target: "/root/openclaw/"
 
-    # 3. SSH in to pull and restart
-    - name: Deploy via SSH
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.SSH_KEY }}
-        script: |
-          cd ~/openclaw
-
-          # Login if image is private (optional, if you configured a token previously)
-          # echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          # Pull and Restart
-          docker compose pull
-          docker compose up -d --remove-orphans
-          docker image prune -f
+      # 5. Save Image, Compress, Pipe to Server, Load, and Restart
+      - name: Pipe Image to Server & Restart
+        run: |
+          # Save image -> Gzip -> SSH -> Gunzip -> Docker Load
+          docker save openclaw:latest | gzip | ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'gunzip | docker load'
+          
+          # Restart App
+          ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'cd ~/openclaw && docker compose up -d --remove-orphans'
+        env:
+          # We need to write the key to a file for the SSH command to use it in the pipe
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        shell: bash
+        # This little block writes the key secret to a file named key.pem so SSH can use it
+        run: |
+          echo "$SSH_KEY" > key.pem
+          chmod 600 key.pem
+          
+          echo "🚀 Sending image to server..."
+          docker save openclaw:latest | gzip | ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'gunzip | docker load'
+          
+          echo "🔄 Restarting container..."
+          ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} 'cd ~/openclaw && docker compose up -d'
