@@ -46,7 +46,7 @@ jobs:
           # STRICTLY build for arm64 to match your Hetzner CPU
           platforms: linux/arm64
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-deploy:
+  deploy:
   needs: build-and-push
   runs-on: ubuntu-latest
   steps:
